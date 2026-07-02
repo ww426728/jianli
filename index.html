@@ -1912,17 +1912,14 @@ function _videoFrameTick(it){
 function _loadCardTexture(it){
   var idx = it.idx;
   if(isMp4Url(it.cardUrl)){
-    /* 视频卡片：创建占位纹理 + 延迟加载视频 */
+    /* 视频卡片：黑色占位 + 聚焦时延迟加载 */
     it._videoLoaded = false;
     it._videoActivated = false;
 
     var c = document.createElement('canvas');
-    c.width = 16; c.height = 9;
+    c.width = 1280; c.height = 720;
     var ctx = c.getContext('2d');
-    /* 占位：深灰色渐变，避免黑屏 */
-    var grad = ctx.createLinearGradient(0,0,16,9);
-    grad.addColorStop(0,'#1a1a2e'); grad.addColorStop(1,'#16213e');
-    ctx.fillStyle = grad; ctx.fillRect(0,0,16,9);
+    ctx.fillStyle = '#000000'; ctx.fillRect(0,0,1280,720);
     var tex = new THREE.CanvasTexture(c);
     tex.minFilter = THREE.LinearFilter;
     tex.magFilter = THREE.LinearFilter;
@@ -1931,10 +1928,11 @@ function _loadCardTexture(it){
     it.ia = 16/9;
     it._cardCanvas = c; it._cardCtx = ctx; it._cardTex = tex;
 
-    /* 创建 video 元素但暂不设 src，等到卡片被聚焦时才加载 */
     var vid = document.createElement('video');
     vid.muted = true; vid.loop = true; vid.playsinline = true;
     vid.autoplay = false; vid.preload = 'none';
+    vid.crossOrigin = 'anonymous';
+    vid.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none;z-index:-1;';
     document.body.appendChild(vid);
     it._cardVideo = vid;
     it._cardVideoUrl = it.cardUrl;
@@ -1944,10 +1942,6 @@ function _loadCardTexture(it){
       _tryPlayVideo(vid);
       it._videoLoaded = true;
       c.width = vid.videoWidth || 320; c.height = vid.videoHeight || 180;
-      if(it.idx === (lastIdx===-1 ? 0 : lastIdx)){
-        bgContainer.style.webkitMaskImage = computeMask(it.ia);
-        bgContainer.style.maskImage       = computeMask(it.ia);
-      }
     });
     vid.addEventListener('canplay', function(){ _videoFrameTick(it); });
     return;
@@ -2548,11 +2542,9 @@ function initRealisticCarousel(imgs){
       it._videoActivated = false;
 
       var c = document.createElement('canvas');
-      c.width = 16; c.height = 9;
+      c.width = 1280; c.height = 720;
       var ctx = c.getContext('2d');
-      var grad = ctx.createLinearGradient(0,0,16,9);
-      grad.addColorStop(0,'#1a1a2e'); grad.addColorStop(1,'#16213e');
-      ctx.fillStyle = grad; ctx.fillRect(0,0,16,9);
+      ctx.fillStyle = '#000000'; ctx.fillRect(0,0,1280,720);
       var tex = new THREE.CanvasTexture(c);
       tex.minFilter = THREE.LinearFilter;
       tex.magFilter = THREE.LinearFilter;
@@ -2564,6 +2556,8 @@ function initRealisticCarousel(imgs){
       var vid = document.createElement('video');
       vid.muted = true; vid.loop = true; vid.playsinline = true;
       vid.autoplay = false; vid.preload = 'none';
+      vid.crossOrigin = 'anonymous';
+      vid.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none;z-index:-1;';
       document.body.appendChild(vid);
       it._cardVideo = vid;
       it._cardVideoUrl = it.cardUrl;
@@ -2582,17 +2576,6 @@ function initRealisticCarousel(imgs){
         }
       });
       vid.addEventListener('canplay', function(){ _videoFrameTick(it); });
-      return;
-
-      vid.addEventListener('loadeddata', function(){
-        try{ vid.currentTime = 0.01; }catch(e){}
-        _tryPlayVideo(vid);
-        if(it.idx === (lastIdxR === -1 ? 0 : lastIdxR)){
-          bgContainer.style.webkitMaskImage = computeMask(it.ia);
-          bgContainer.style.maskImage       = computeMask(it.ia);
-        }
-      });
-      vid.src = it.cardUrl;
       return;
     }
 
