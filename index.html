@@ -1838,19 +1838,22 @@ function init(){
     if(secStylized) visObs.observe(secStylized);
   }
 
-  // ══ Phase 1（下一帧）：隐藏 loading + 开始加载中间 3 张卡片纹理 ══
+  // ══ Phase 1（下一帧）：隐藏 loading + 按优先级加载所有资源 ══
+  //     优先级：从上到下，同层图片 > 视频
   requestAnimationFrame(function(){
     var loadingEl = document.getElementById('stylized-loading');
     if(loadingEl) loadingEl.style.display = 'none';
 
     if(meshes.length > 0) updateCardInfo(0);
 
-    // 先只加载最关键的 3 张（当前 + 左右邻居）
-    var centerIdx = Math.floor(meshes.length / 2);
-    for(var offset = -1; offset <= 1; offset++){
-      var idx = centerIdx + offset;
-      if(idx >= 0 && idx < meshes.length){
-        _loadCardTexture(meshes[idx]);
+    // 分离图片卡片和视频卡片，各自保持原顺序（从上到下）
+    var imageCards = [];
+    var videoCards = [];
+    for(var si = 0; si < meshes.length; si++){
+      if(isMp4Url(meshes[si].cardUrl)){
+        videoCards.push(meshes[si]);
+      } else {
+        imageCards.push(meshes[si]);
       }
     }
 
@@ -1860,18 +1863,24 @@ function init(){
         setBg(meshes[0].bgUrl, meshes[0].ia, meshes[0].originalUrl);
       }
 
-      // ══ Phase 3：剩余卡片逐张加载（每帧1张，不卡顿）══
-      var remaining = [];
-      for(var mi = 0; mi < meshes.length; mi++){
-        if(mi < centerIdx - 1 || mi > centerIdx + 1) remaining.push(meshes[mi]);
+      // ══ Phase 3A：先加载所有图片（从上到下，每帧1张）══
+      var imgIdx = 0;
+      function loadNextImage(){
+        if(imgIdx >= imageCards.length){
+          // ══ Phase 3B：所有图片加载完后再加载视频（从上到下，每帧1张）══
+          var vidIdx = 0;
+          function loadNextVideo(){
+            if(vidIdx >= videoCards.length) return;
+            _loadCardTexture(videoCards[vidIdx++]);
+            requestAnimationFrame(loadNextVideo);
+          }
+          if(videoCards.length > 0) requestAnimationFrame(loadNextVideo);
+          return;
+        }
+        _loadCardTexture(imageCards[imgIdx++]);
+        requestAnimationFrame(loadNextImage);
       }
-      var queueIdx = 0;
-      function loadNext(){
-        if(queueIdx >= remaining.length) return;
-        _loadCardTexture(remaining[queueIdx++]);
-        requestAnimationFrame(loadNext); // 每帧只加载1张，分散压力
-      }
-      requestAnimationFrame(loadNext);
+      requestAnimationFrame(loadNextImage);
     });
   });
 }
@@ -1912,17 +1921,17 @@ function _videoFrameTick(it){
 function _loadCardTexture(it){
   var idx = it.idx;
   if(isMp4Url(it.cardUrl)){
-    /* 视频卡片：创建占位纹理 + 延迟加载视频 */
+    /* 视频卡片：创建占位纹理 + 视频随页面打开即开始加载 */
     it._videoLoaded = false;
     it._videoActivated = false;
 
     var c = document.createElement('canvas');
-    c.width = 16; c.height = 9;
+    c.width = 1280; c.height = 720;
     var ctx = c.getContext('2d');
     /* 占位：深灰色渐变，避免黑屏 */
-    var grad = ctx.createLinearGradient(0,0,16,9);
+    var grad = ctx.createLinearGradient(0,0,1280,720);
     grad.addColorStop(0,'#1a1a2e'); grad.addColorStop(1,'#16213e');
-    ctx.fillStyle = grad; ctx.fillRect(0,0,16,9);
+    ctx.fillStyle = grad; ctx.fillRect(0,0,1280,720);
     var tex = new THREE.CanvasTexture(c);
     tex.minFilter = THREE.LinearFilter;
     tex.magFilter = THREE.LinearFilter;
@@ -1931,25 +1940,40 @@ function _loadCardTexture(it){
     it.ia = 16/9;
     it._cardCanvas = c; it._cardCtx = ctx; it._cardTex = tex;
 
-    /* 创建 video 元素但暂不设 src，等到卡片被聚焦时才加载 */
+    /* 创建 video 元素，立即设 src 开始加载 */
     var vid = document.createElement('video');
     vid.muted = true; vid.loop = true; vid.playsinline = true;
-    vid.autoplay = false; vid.preload = 'none';
+    vid.autoplay = false; vid.preload = 'auto';
+    vid.crossOrigin = 'anonymous';
+    vid.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none;z-index:-1;';
     document.body.appendChild(vid);
     it._cardVideo = vid;
     it._cardVideoUrl = it.cardUrl;
 
+    vid.addEventListener('loadedmetadata', function(){
+      /* 视频元数据加载后更新宽高比，确保卡片不拉伸 */
+      var ia = (vid.videoHeight > 0) ? vid.videoWidth / vid.videoHeight : 16/9;
+      it.ia = ia;
+      it.mat.uniforms.uImgAspect.value = ia;
+    });
     vid.addEventListener('loadeddata', function(){
       try{ vid.currentTime = 0.01; }catch(e){}
       _tryPlayVideo(vid);
       it._videoLoaded = true;
-      c.width = vid.videoWidth || 320; c.height = vid.videoHeight || 180;
+      it._videoActivated = true;
+      c.width = vid.videoWidth || 1280; c.height = vid.videoHeight || 720;
+      var ia = (vid.videoHeight > 0) ? vid.videoWidth / vid.videoHeight : 16/9;
+      it.ia = ia;
+      it.mat.uniforms.uImgAspect.value = ia;
       if(it.idx === (lastIdx===-1 ? 0 : lastIdx)){
-        bgContainer.style.webkitMaskImage = computeMask(it.ia);
-        bgContainer.style.maskImage       = computeMask(it.ia);
+        bgContainer.style.webkitMaskImage = computeMask(ia);
+        bgContainer.style.maskImage = computeMask(ia);
       }
     });
     vid.addEventListener('canplay', function(){ _videoFrameTick(it); });
+    /* 立即开始加载视频源 */
+    vid.src = it.cardUrl;
+    vid.load();
     return;
   }
 
@@ -2238,17 +2262,6 @@ function animate(){
     updateCardInfo(closest.idx);
   }
 
-  /* 激活当前聚焦卡片的视频（延迟加载，节省带宽） */
-  if(lastIdx >= 0 && meshes[lastIdx] && meshes[lastIdx]._cardVideo && !meshes[lastIdx]._videoActivated){
-    var _activeVid = meshes[lastIdx];
-    _activeVid._videoActivated = true;
-    _activeVid._videoCardVideo = _activeVid._cardVideo;
-    _activeVid._cardVideo.preload = 'auto';
-    _activeVid._cardVideo.src = _activeVid._cardVideoUrl;
-    _activeVid._cardVideo.load();
-  }
-
-  
   // mp4 卡面：每帧把 video 当前帧画到 canvas，更新纹理（仅已激活的视频）
   for(var mi=0; mi<meshes.length; mi++){
     var _it = meshes[mi];
@@ -2509,15 +2522,21 @@ function initRealisticCarousel(imgs){
     if(sec) visObsR.observe(sec);
   }
 
-  // ══ Phase 1（下一帧）：加载中间 3 张卡片纹理 ══
+  // ══ Phase 1（下一帧）：按优先级加载所有资源 ══
+  //     优先级：从上到下，同层图片 > 视频
   requestAnimationFrame(function(){
     if(loadingEl) loadingEl.style.display = 'none';
     updateCardInfoR(0);
 
-    var centerIdx = Math.floor(meshesR.length / 2);
-    for(var offset = -1; offset <= 1; offset++){
-      var cidx = centerIdx + offset;
-      if(cidx >= 0 && cidx < meshesR.length) _loadCardTexR(meshesR[cidx]);
+    // 分离图片卡片和视频卡片，各自保持原顺序（从上到下）
+    var imageCardsR = [];
+    var videoCardsR = [];
+    for(var si = 0; si < meshesR.length; si++){
+      if(isMp4Url(meshesR[si].cardUrl)){
+        videoCardsR.push(meshesR[si]);
+      } else {
+        imageCardsR.push(meshesR[si]);
+      }
     }
 
     // ══ Phase 2（再下一帧）：背景图 ══
@@ -2525,34 +2544,40 @@ function initRealisticCarousel(imgs){
       if(meshesR.length > 0){
         setBgR(meshesR[0].bgUrl, meshesR[0].ia, meshesR[0].originalUrl);
       }
-      // ══ Phase 3：剩余卡片逐帧加载 ══
-      var remainingR = [];
-      for(var ri = 0; ri < meshesR.length; ri++){
-        if(ri < centerIdx - 1 || ri > centerIdx + 1) remainingR.push(meshesR[ri]);
+      // ══ Phase 3A：先加载所有图片（从上到下，每帧1张）══
+      var imgIdxR = 0;
+      function loadNextImageR(){
+        if(imgIdxR >= imageCardsR.length){
+          // ══ Phase 3B：所有图片加载完后再加载视频（从上到下，每帧1张）══
+          var vidIdxR = 0;
+          function loadNextVideoR(){
+            if(vidIdxR >= videoCardsR.length) return;
+            _loadCardTexR(videoCardsR[vidIdxR++]);
+            requestAnimationFrame(loadNextVideoR);
+          }
+          if(videoCardsR.length > 0) requestAnimationFrame(loadNextVideoR);
+          return;
+        }
+        _loadCardTexR(imageCardsR[imgIdxR++]);
+        requestAnimationFrame(loadNextImageR);
       }
-      var rqIdx = 0;
-      function loadNextR(){
-        if(rqIdx >= remainingR.length) return;
-        _loadCardTexR(remainingR[rqIdx++]);
-        requestAnimationFrame(loadNextR);
-      }
-      requestAnimationFrame(loadNextR);
+      requestAnimationFrame(loadNextImageR);
     });
   });
 
   /* 加载单张写实卡片纹理 */
   function _loadCardTexR(it){
-    /* ═ 视频卡片：占位纹理 + 延迟加载 ═ */
+    /* ═ 视频卡片：占位纹理 + 立即开始加载 ═ */
     if(isMp4Url(it.cardUrl)){
       it._videoLoaded = false;
       it._videoActivated = false;
 
       var c = document.createElement('canvas');
-      c.width = 16; c.height = 9;
+      c.width = 1280; c.height = 720;
       var ctx = c.getContext('2d');
-      var grad = ctx.createLinearGradient(0,0,16,9);
+      var grad = ctx.createLinearGradient(0,0,1280,720);
       grad.addColorStop(0,'#1a1a2e'); grad.addColorStop(1,'#16213e');
-      ctx.fillStyle = grad; ctx.fillRect(0,0,16,9);
+      ctx.fillStyle = grad; ctx.fillRect(0,0,1280,720);
       var tex = new THREE.CanvasTexture(c);
       tex.minFilter = THREE.LinearFilter;
       tex.magFilter = THREE.LinearFilter;
@@ -2563,36 +2588,38 @@ function initRealisticCarousel(imgs){
 
       var vid = document.createElement('video');
       vid.muted = true; vid.loop = true; vid.playsinline = true;
-      vid.autoplay = false; vid.preload = 'none';
+      vid.autoplay = false; vid.preload = 'auto';
+      vid.crossOrigin = 'anonymous';
+      vid.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none;z-index:-1;';
       document.body.appendChild(vid);
       it._cardVideo = vid;
       it._cardVideoUrl = it.cardUrl;
 
+      vid.addEventListener('loadedmetadata', function(){
+        var ia = (vid.videoHeight > 0) ? vid.videoWidth / vid.videoHeight : 16/9;
+        it.ia = ia;
+        it.mat.uniforms.uImgAspect.value = ia;
+      });
       vid.addEventListener('loadeddata', function(){
         try{ vid.currentTime = 0.01; }catch(e){}
         _tryPlayVideo(vid);
         it._videoLoaded = true;
-        c.width = vid.videoWidth || 320; c.height = vid.videoHeight || 180;
+        it._videoActivated = true;
+        c.width = vid.videoWidth || 1280; c.height = vid.videoHeight || 720;
+        var ia = (vid.videoHeight > 0) ? vid.videoWidth / vid.videoHeight : 16/9;
+        it.ia = ia;
+        it.mat.uniforms.uImgAspect.value = ia;
         if(it.idx === (lastIdxR===-1 ? 0 : lastIdxR)){
           var bgContainer = document.getElementById('bg-container-realistic');
           if(bgContainer){
-            bgContainer.style.webkitMaskImage = computeMask(it.ia);
-            bgContainer.style.maskImage       = computeMask(it.ia);
+            bgContainer.style.webkitMaskImage = computeMask(ia);
+            bgContainer.style.maskImage       = computeMask(ia);
           }
         }
       });
       vid.addEventListener('canplay', function(){ _videoFrameTick(it); });
-      return;
-
-      vid.addEventListener('loadeddata', function(){
-        try{ vid.currentTime = 0.01; }catch(e){}
-        _tryPlayVideo(vid);
-        if(it.idx === (lastIdxR === -1 ? 0 : lastIdxR)){
-          bgContainer.style.webkitMaskImage = computeMask(it.ia);
-          bgContainer.style.maskImage       = computeMask(it.ia);
-        }
-      });
       vid.src = it.cardUrl;
+      vid.load();
       return;
     }
 
@@ -2813,15 +2840,6 @@ function initRealisticCarousel(imgs){
       updateCardInfoR(closest.idx);
     }
 
-    /* 激活写实区当前聚焦卡片的视频（延迟加载） */
-    if(lastIdxR >= 0 && meshesR[lastIdxR] && meshesR[lastIdxR]._cardVideo && !meshesR[lastIdxR]._videoActivated){
-      var _activeVidR = meshesR[lastIdxR];
-      _activeVidR._videoActivated = true;
-      _activeVidR._cardVideo.preload = 'auto';
-      _activeVidR._cardVideo.src = _activeVidR._cardVideoUrl;
-      _activeVidR._cardVideo.load();
-    }
-    
     // 写实风：mp4 卡面视频帧更新（仅已激活的视频）
     for(var mi=0; mi<meshesR.length; mi++){
       var _it = meshesR[mi];
