@@ -2309,6 +2309,10 @@ if(document.readyState === 'loading'){
 }
 
 function _lazyInit(){
+  _loadState.threeReady = true;
+  var sub = document.getElementById('loading-sub');
+  if(sub) sub.textContent = '即将完成';
+  _checkLoadingDone();
   // 风格化 section 懒初始化
   var secS = document.getElementById('sec-stylized');
   if(secS){
