@@ -2375,44 +2375,16 @@ if(document.readyState === 'loading'){
 }
 
 function _lazyInit(){
-  // threeReady 将由 _doInitStylized 和 _doInitRealistic 在真正初始化时设置
-  // 不再在 DOMContentLoaded 时设，避免 loading 界面隐藏而内容还没加载
+  // 标记 threeReady，让 loading 界面可以关闭（不再等滚动到作品区）
+  _loadState.threeReady = true;
   var sub = document.getElementById('loading-sub');
-  if(sub) sub.textContent = '即将完成';
-  // 风格化 section 懒初始化
-  var secS = document.getElementById('sec-stylized');
-  if(secS){
-    if(typeof IntersectionObserver !== 'undefined'){
-      var obsS = new IntersectionObserver(function(entries){
-        if(entries[0].isIntersecting){
-          obsS.disconnect();
-          _doInitStylized();
-        }
-      }, { rootMargin: '300px 0px' }); // 提前300px开始初始化
-      obsS.observe(secS);
-    } else {
-      // 无 IntersectionObserver 支持时直接初始化
-      _doInitStylized();
-    }
-  }
+  if(sub) sub.textContent = '加载作品中...';
+  _checkLoadingDone();
+  // 风格化 section 立即可始初始化（不再懒加载，保证作品区一出现就就绪）
+  _doInitStylized();
 
-  // 写实 section 懒初始化
-  if(typeof imageDataRealistic !== 'undefined'){
-    var secR = document.getElementById('sec-realistic');
-    if(secR){
-      if(typeof IntersectionObserver !== 'undefined'){
-        var obsR = new IntersectionObserver(function(entries){
-          if(entries[0].isIntersecting){
-            obsR.disconnect();
-            _doInitRealistic();
-          }
-        }, { rootMargin: '300px 0px' });
-        obsR.observe(secR);
-      } else {
-        _doInitRealistic();
-      }
-    }
-  }
+  // 写实 section 也立即可始初始化，避免滚到时刷新导致卡顿
+  _doInitRealistic();
 }
 
 // 写实：第二个独立 3D 轮播实例（独立 scene/camera/renderer/state）
