@@ -1424,9 +1424,10 @@ setTimeout(function(){
   section.addEventListener('mouseleave', function(){ _otherHovered = false; });
   window.addEventListener('wheel', function(e){
     if(!sectionVisible || !_otherHovered) return;
+    e.preventDefault();
     wheelNudge1 += e.deltaY * 0.5;
     wheelNudge2 += e.deltaY * 0.5;
-  }, {passive:true});
+  }, {passive:false});
 
   /* ── rAF 主循环 ── */
   function tick(now){
