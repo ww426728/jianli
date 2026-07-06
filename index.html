@@ -1505,25 +1505,13 @@ setTimeout(function(){
 (function(){
 'use strict';
 
-/* ── 协议检测：file:// 下用 base64 data URL，http/https 下用正常 TextureLoader ── */
+/* ── 协议检测：file:// 先试本地文件，加载失败再回退到 CDN ── */
 var IS_FILE_PROTO = (window.location.protocol === 'file:');
-var _cardBase64Ready = false;
-if(IS_FILE_PROTO){
-  // 等 async 的 card_base64.js 加载完
-  var _cb64Check = setInterval(function(){
-    if(typeof CARD_BASE64 !== 'undefined'){
-      _cardBase64Ready = true;
-      clearInterval(_cb64Check);
-      // 触发延迟初始化
-      if(_pendingStylizedInit) { _pendingStylizedInit(); _pendingStylizedInit = null; }
-      if(_pendingRealisticInit) { _pendingRealisticInit(); _pendingRealisticInit = null; }
-    }
-  }, 50);
-  // 超时兜底：3秒后也继续初始化（部分卡片可能没纹理但不阻塞）
-  setTimeout(function(){ clearInterval(_cb64Check); _cardBase64Ready = true; }, 3000);
+function _fileUrl(cdnUrl){
+  if(!IS_FILE_PROTO) return cdnUrl;
+  var m = typeof cdnUrl === 'string' && cdnUrl.match(/@main\/(.+)$/);
+  return m ? m[1] : cdnUrl;
 }
-var _pendingStylizedInit = null;
-var _pendingRealisticInit = null;
 
 var imageData = [
   { original:"https://cdn.jsdelivr.net/gh/ww426728/jianli@main/风格化_1920p/01.jpg", bg:"https://cdn.jsdelivr.net/gh/ww426728/jianli@main/风格化_1920p/01.jpg", card:"https://cdn.jsdelivr.net/gh/ww426728/jianli@main/风格化_1920p/01.jpg", name:"作品01", meta:"风格化" },
@@ -1747,9 +1735,14 @@ function setBg(url, ia, fallback){
       c.style.maskImage = computeMask(ia);
     };
     var tmp = new Image();
-    tmp.onload = function(){doSet(url);};
-    tmp.onerror = function(){if(fallback)doSet(fallback);};
-    tmp.src = url;
+    /* file:// 先试本地路径，失败用 CDN */
+    var _bgSrc = isVid ? url : _fileUrl(url);
+    tmp.onload = function(){doSet(_bgSrc === url ? url : _bgSrc);};
+    tmp.onerror = function(){
+      if(_bgSrc !== url){ tmp.src = url; return; }
+      if(fallback && fallback !== url)doSet(fallback);
+    };
+    tmp.src = _bgSrc;
   }
 }
 
@@ -1966,6 +1959,14 @@ function _loadCardTexture(it){
     document.body.appendChild(vid);
     it._cardVideo = vid;
     it._cardVideoUrl = it.cardUrl;
+    /* file:// 先用本地路径，加载失败回调 CDN */
+    var _vidSrc = _fileUrl(it.cardUrl);
+    var _vidCdn = it.cardUrl;
+    vid.addEventListener('error', function(){
+      if(vid.networkState === vid.NETWORK_NO_SOURCE && _vidSrc !== _vidCdn){
+        vid.src = _vidCdn; vid.load();
+      }
+    });
 
     vid.addEventListener('loadedmetadata', function(){
       /* 视频元数据加载后更新宽高比，确保卡片不拉伸 */
@@ -1989,7 +1990,7 @@ function _loadCardTexture(it){
     });
     vid.addEventListener('canplay', function(){ _videoFrameTick(it); });
     /* 立即开始加载视频源 */
-    vid.src = it.cardUrl;
+    vid.src = _vidSrc;
     vid.load();
     return;
   }
@@ -2026,8 +2027,9 @@ function _loadCardTexture(it){
       });
     });
   } else {
-    /* file:// 协议：直接 Image 加载本地文件 */
-    var localUrl = it.cardUrl;
+    /* file:// 协议：先试本地相对路径，失败回退到 CDN */
+    var localUrl = _fileUrl(it.cardUrl);
+    var cdnFallback = it.cardUrl;
     var img = new Image();
     img.onload = function(){
       var tex = new THREE.Texture(img);
@@ -2044,7 +2046,8 @@ function _loadCardTexture(it){
       }
     };
     img.onerror = function(){
-      if(it.originalUrl && it.originalUrl !== localUrl){
+      /* 本地文件失败，回退到 CDN */
+      if(cdnFallback && cdnFallback !== localUrl){
         var img2 = new Image();
         img2.onload = function(){
           var tex = new THREE.Texture(img2);
@@ -2056,7 +2059,7 @@ function _loadCardTexture(it){
           it.mat.uniforms.uImgAspect.value = ia;
           it.ia = ia;
         };
-        img2.src = it.originalUrl;
+        img2.src = cdnFallback;
       }
     };
     img.src = localUrl;
@@ -2380,6 +2383,24 @@ function _lazyInit(){
   var sub = document.getElementById('loading-sub');
   if(sub) sub.textContent = '加载作品中...';
   _checkLoadingDone();
+
+  // file:// 协议：把其他区和图标区的 CDN 链接替换为本地路径
+  if(IS_FILE_PROTO){
+    document.querySelectorAll('.other-card img').forEach(function(img){
+      var cdnSrc = img.getAttribute('src');
+      var localSrc = _fileUrl(cdnSrc);
+      if(localSrc !== cdnSrc){
+        img.setAttribute('src', localSrc);
+        img.onerror = function(){ this.src = cdnSrc; };
+      }
+      var parent = img.parentElement;
+      if(parent){
+        var orig = parent.getAttribute('data-original');
+        if(orig) parent.setAttribute('data-original', _fileUrl(orig));
+      }
+    });
+  }
+
   // 风格化 section 立即可始初始化（不再懒加载，保证作品区一出现就就绪）
   _doInitStylized();
 
@@ -2449,9 +2470,14 @@ function initRealisticCarousel(imgs){
         c.style.maskImage = computeMask(ia);
       };
       var tmp = new Image();
-      tmp.onload  = function(){ doSet(url); };
-      tmp.onerror = function(){ if(fallback) doSet(fallback); };
-      tmp.src = url;
+      /* file:// 先试本地路径，失败用 CDN */
+      var _bgSrcR = _fileUrl(url);
+      tmp.onload = function(){ doSet(_bgSrcR === url ? url : _bgSrcR); };
+      tmp.onerror = function(){
+        if(_bgSrcR !== url){ tmp.src = url; return; }
+        if(fallback && fallback !== url) doSet(fallback);
+      };
+      tmp.src = _bgSrcR;
     }
   }
 
@@ -2585,6 +2611,14 @@ function initRealisticCarousel(imgs){
       document.body.appendChild(vid);
       it._cardVideo = vid;
       it._cardVideoUrl = it.cardUrl;
+      /* file:// 先用本地路径，加载失败回调 CDN */
+      var _vidSrcR = _fileUrl(it.cardUrl);
+      var _vidCdnR = it.cardUrl;
+      vid.addEventListener('error', function(){
+        if(vid.networkState === vid.NETWORK_NO_SOURCE && _vidSrcR !== _vidCdnR){
+          vid.src = _vidCdnR; vid.load();
+        }
+      });
 
       vid.addEventListener('loadedmetadata', function(){
         var ia = (vid.videoHeight > 0) ? vid.videoWidth / vid.videoHeight : 16/9;
@@ -2609,7 +2643,7 @@ function initRealisticCarousel(imgs){
         }
       });
       vid.addEventListener('canplay', function(){ _videoFrameTick(it); });
-      vid.src = it.cardUrl;
+      vid.src = _vidSrcR;
       vid.load();
       return;
     }
@@ -2646,8 +2680,9 @@ function initRealisticCarousel(imgs){
         });
       });
     } else {
-      /* file:// 协议：直接 Image 加载本地文件 */
-      var localUrl = it.cardUrl;
+      /* file:// 协议：先试本地相对路径，失败回退到 CDN */
+      var localUrl = _fileUrl(it.cardUrl);
+      var cdnFallback = it.cardUrl;
       var img = new Image();
       img.onload = function(){
         var tex = new THREE.Texture(img);
@@ -2664,7 +2699,8 @@ function initRealisticCarousel(imgs){
         }
       };
       img.onerror = function(){
-        if(it.originalUrl && it.originalUrl !== localUrl){
+        /* 本地文件失败，回退到 CDN */
+        if(cdnFallback && cdnFallback !== localUrl){
           var img2 = new Image();
           img2.onload = function(){
             var tex = new THREE.Texture(img2);
@@ -2676,7 +2712,7 @@ function initRealisticCarousel(imgs){
             it.mat.uniforms.uImgAspect.value = ia;
             it.ia = ia;
           };
-          img2.src = it.originalUrl;
+          img2.src = cdnFallback;
         }
       };
       img.src = localUrl;
