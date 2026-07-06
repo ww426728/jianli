@@ -2044,39 +2044,35 @@ function _loadCardTexture(it){
     it.ia = 16/9;
     var localUrl = _fileUrl(it.cardUrl);
     var cdnFallback = it.cardUrl;
-    var img = new Image();
-    img.onload = function(){
-      var tex = new THREE.Texture(img);
-      tex.minFilter = THREE.LinearFilter;
-      tex.magFilter = THREE.LinearFilter;
-      tex.needsUpdate = true;
-      var ia = (img.height > 0) ? img.width / img.height : 1.0;
-      it.mat.uniforms.uTexture.value = tex;
-      it.mat.uniforms.uImgAspect.value = ia;
-      it.ia = ia;
-      if(it.idx === (lastIdx === -1 ? 0 : lastIdx)){
-        bgContainer.style.webkitMaskImage = computeMask(ia);
-        bgContainer.style.maskImage = computeMask(ia);
-      }
-    };
-    img.onerror = function(){
-      /* 本地文件失败，回退到 CDN */
-      if(cdnFallback && cdnFallback !== localUrl){
-        var img2 = new Image();
-        img2.onload = function(){
-          var tex = new THREE.Texture(img2);
+    /* 用 TextureLoader 加载，和 https:// 路径一致，避免 file:// 下纹理不生效 */
+    _enqueueTex(function(next){
+      var tl = new THREE.TextureLoader();
+      tl.load(localUrl, function(tex){
+        tex.minFilter = THREE.LinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        var ia = (tex.image && tex.image.height > 0) ? tex.image.width / tex.image.height : 1.0;
+        it.mat.uniforms.uTexture.value = tex;
+        it.mat.uniforms.uImgAspect.value = ia;
+        it.ia = ia;
+        if(it.idx === (lastIdx === -1 ? 0 : lastIdx)){
+          bgContainer.style.webkitMaskImage = computeMask(ia);
+          bgContainer.style.maskImage = computeMask(ia);
+        }
+        next();
+      }, undefined, function(){
+        /* 本地文件失败，回退到 CDN */
+        var tl2 = new THREE.TextureLoader();
+        tl2.load(cdnFallback, function(tex){
           tex.minFilter = THREE.LinearFilter;
           tex.magFilter = THREE.LinearFilter;
-          tex.needsUpdate = true;
-          var ia = (img2.height > 0) ? img2.width / img2.height : 1.0;
+          var ia = (tex.image && tex.image.height > 0) ? tex.image.width / tex.image.height : 1.0;
           it.mat.uniforms.uTexture.value = tex;
           it.mat.uniforms.uImgAspect.value = ia;
           it.ia = ia;
-        };
-        img2.src = cdnFallback;
-      }
-    };
-    img.src = localUrl;
+          next();
+        });
+      });
+    });
   }
 }
 
@@ -2710,39 +2706,35 @@ function initRealisticCarousel(imgs){
       it.ia = 16/9;
       var localUrl = _fileUrl(it.cardUrl);
       var cdnFallback = it.cardUrl;
-      var img = new Image();
-      img.onload = function(){
-        var tex = new THREE.Texture(img);
-        tex.minFilter = THREE.LinearFilter;
-        tex.magFilter = THREE.LinearFilter;
-        tex.needsUpdate = true;
-        var ia = (img.height > 0) ? img.width / img.height : 1.0;
-        it.mat.uniforms.uTexture.value = tex;
-        it.mat.uniforms.uImgAspect.value = ia;
-        it.ia = ia;
-        if(it.idx === (lastIdxR === -1 ? 0 : lastIdxR)){
-          bgContainer.style.webkitMaskImage = computeMask(ia);
-          bgContainer.style.maskImage = computeMask(ia);
-        }
-      };
-      img.onerror = function(){
-        /* 本地文件失败，回退到 CDN */
-        if(cdnFallback && cdnFallback !== localUrl){
-          var img2 = new Image();
-          img2.onload = function(){
-            var tex = new THREE.Texture(img2);
+      /* 用 TextureLoader 加载，和 https:// 路径一致 */
+      _enqueueTex(function(next){
+        var tl = new THREE.TextureLoader();
+        tl.load(localUrl, function(tex){
+          tex.minFilter = THREE.LinearFilter;
+          tex.magFilter = THREE.LinearFilter;
+          var ia = (tex.image && tex.image.height > 0) ? tex.image.width / tex.image.height : 1.0;
+          it.mat.uniforms.uTexture.value = tex;
+          it.mat.uniforms.uImgAspect.value = ia;
+          it.ia = ia;
+          if(it.idx === (lastIdxR === -1 ? 0 : lastIdxR)){
+            bgContainer.style.webkitMaskImage = computeMask(ia);
+            bgContainer.style.maskImage = computeMask(ia);
+          }
+          next();
+        }, undefined, function(){
+          /* 本地文件失败，回退到 CDN */
+          var tl2 = new THREE.TextureLoader();
+          tl2.load(cdnFallback, function(tex){
             tex.minFilter = THREE.LinearFilter;
             tex.magFilter = THREE.LinearFilter;
-            tex.needsUpdate = true;
-            var ia = (img2.height > 0) ? img2.width / img2.height : 1.0;
+            var ia = (tex.image && tex.image.height > 0) ? tex.image.width / tex.image.height : 1.0;
             it.mat.uniforms.uTexture.value = tex;
             it.mat.uniforms.uImgAspect.value = ia;
             it.ia = ia;
-          };
-          img2.src = cdnFallback;
-        }
-      };
-      img.src = localUrl;
+            next();
+          });
+        });
+      });
     }
   }
 
