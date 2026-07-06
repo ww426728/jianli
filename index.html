@@ -2028,6 +2028,19 @@ function _loadCardTexture(it){
     });
   } else {
     /* file:// 协议：先试本地相对路径，失败回退到 CDN */
+    /* 创建占位纹理，避免加载期间显示黑屏 */
+    var phC = document.createElement('canvas');
+    phC.width = 1280; phC.height = 720;
+    var phCtx = phC.getContext('2d');
+    var phGrad = phCtx.createLinearGradient(0,0,1280,720);
+    phGrad.addColorStop(0,'#1a1a2e'); phGrad.addColorStop(1,'#16213e');
+    phCtx.fillStyle = phGrad; phCtx.fillRect(0,0,1280,720);
+    var phTex = new THREE.CanvasTexture(phC);
+    phTex.minFilter = THREE.LinearFilter;
+    phTex.magFilter = THREE.LinearFilter;
+    it.mat.uniforms.uTexture.value = phTex;
+    it.mat.uniforms.uImgAspect.value = 16/9;
+    it.ia = 16/9;
     var localUrl = _fileUrl(it.cardUrl);
     var cdnFallback = it.cardUrl;
     var img = new Image();
@@ -2681,6 +2694,19 @@ function initRealisticCarousel(imgs){
       });
     } else {
       /* file:// 协议：先试本地相对路径，失败回退到 CDN */
+      /* 创建占位纹理，避免加载期间显示黑屏 */
+      var phC = document.createElement('canvas');
+      phC.width = 1280; phC.height = 720;
+      var phCtx = phC.getContext('2d');
+      var phGrad = phCtx.createLinearGradient(0,0,1280,720);
+      phGrad.addColorStop(0,'#1a1a2e'); phGrad.addColorStop(1,'#16213e');
+      phCtx.fillStyle = phGrad; phCtx.fillRect(0,0,1280,720);
+      var phTex = new THREE.CanvasTexture(phC);
+      phTex.minFilter = THREE.LinearFilter;
+      phTex.magFilter = THREE.LinearFilter;
+      it.mat.uniforms.uTexture.value = phTex;
+      it.mat.uniforms.uImgAspect.value = 16/9;
+      it.ia = 16/9;
       var localUrl = _fileUrl(it.cardUrl);
       var cdnFallback = it.cardUrl;
       var img = new Image();
